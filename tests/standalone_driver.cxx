@@ -17,8 +17,14 @@
 #include <highfive/H5File.hpp>
 #include "ini_input.hpp"
 #include <gauxc/exceptions.hpp>
+#include "standards.hpp"
+
 #define EIGEN_DONT_VECTORIZE
 #define EIGEN_NO_CUDA
+
+#define GAUXC_ENABLE_DEVICE
+#define GAUXC_ENABLE_MPI
+
 #include <Eigen/Core>
 
 using namespace GauXC;
@@ -30,10 +36,13 @@ int main(int argc, char** argv) {
   MPI_Init( NULL, NULL );
 #endif
   {
-
+    
+    void *mem = NULL;
+    cudaMalloc(&mem, (size_t)1024*1024);
+    cudaMemset(mem, 0x01010101, (size_t)1024*1024);
     // Set up runtimes
     #ifdef GAUXC_ENABLE_DEVICE
-    auto rt = DeviceRuntimeEnvironment( GAUXC_MPI_CODE(MPI_COMM_WORLD,) 0.9 );
+    auto rt = DeviceRuntimeEnvironment(GAUXC_MPI_CODE(MPI_COMM_WORLD,) mem, (size_t)1024*1024*1024);
     #else
     auto rt = RuntimeEnvironment(GAUXC_MPI_CODE(MPI_COMM_WORLD));
     #endif
@@ -52,8 +61,8 @@ int main(int argc, char** argv) {
     // Optional Args
     std::string grid_spec          = "ULTRAFINE";
     std::string prune_spec         = "UNPRUNED";
-    std::string lb_exec_space_str  = "Host";
-    std::string int_exec_space_str = "Host";
+    std::string lb_exec_space_str  = "Device";
+    std::string int_exec_space_str = "Device";
     std::string integrator_kernel  = "Default";
     std::string lwd_kernel         = "Default";
     std::string reduction_kernel   = "Default";
@@ -71,18 +80,19 @@ int main(int argc, char** argv) {
       std::transform( str.begin(), str.end(), str.begin(), ::toupper );
     };
 
+    // 从文件中读入相应字段的设置
     #define OPTIONAL_KEYWORD(NAME,VAR,TYPE) \
     if( input.containsData(NAME) ) {        \
         VAR = input.getData<TYPE>(NAME);    \
     }
 
-    OPTIONAL_KEYWORD( "GAUXC.GRID",              grid_spec,          std::string );
-    OPTIONAL_KEYWORD( "GAUXC.FUNC",              func_spec,          std::string );
-    OPTIONAL_KEYWORD( "GAUXC.PRUNING_SCHEME",    prune_spec,         std::string );
-    OPTIONAL_KEYWORD( "GAUXC.LB_EXEC_SPACE",     lb_exec_space_str,  std::string );
-    OPTIONAL_KEYWORD( "GAUXC.INT_EXEC_SPACE",    int_exec_space_str, std::string );
-    OPTIONAL_KEYWORD( "GAUXC.INTEGRATOR_KERNEL", integrator_kernel,  std::string );
-    OPTIONAL_KEYWORD( "GAUXC.LWD_KERNEL",        lwd_kernel,         std::string );
+    OPTIONAL_KEYWORD( "GAUXC.GRID",              grid_spec,          std::string ); // ULTRAFINE 指定网格精度 find/utral/superfine/gm3/gm5
+    OPTIONAL_KEYWORD( "GAUXC.FUNC",              func_spec,           std::string ); // PBE0
+    OPTIONAL_KEYWORD( "GAUXC.PRUNING_SCHEME",    prune_spec,         std::string ); // UNPRUNED 未剪枝的
+    OPTIONAL_KEYWORD( "GAUXC.LB_EXEC_SPACE",     lb_exec_space_str,  std::string ); // device 某个部分在device上计算
+    OPTIONAL_KEYWORD( "GAUXC.INT_EXEC_SPACE",    int_exec_space_str, std::string ); // device 某个部分在device上计算
+    OPTIONAL_KEYWORD( "GAUXC.INTEGRATOR_KERNEL", integrator_kernel,  std::string ); // default
+    OPTIONAL_KEYWORD( "GAUXC.LWD_KERNEL",        lwd_kernel,         std::string ); 
     OPTIONAL_KEYWORD( "GAUXC.REDUCTION_KERNEL",  reduction_kernel,   std::string );
     string_to_upper( grid_spec          );
     string_to_upper( func_spec          );
@@ -93,18 +103,19 @@ int main(int argc, char** argv) {
     string_to_upper( lwd_kernel         );
     string_to_upper( reduction_kernel   );
 
-    OPTIONAL_KEYWORD( "GAUXC.BATCH_SIZE",     batch_size, size_t );
-    OPTIONAL_KEYWORD( "GAUXC.BASIS_TOL",      basis_tol,  double );
+    OPTIONAL_KEYWORD( "GAUXC.BATCH_SIZE",     batch_size, size_t ); // 无法理解
+    OPTIONAL_KEYWORD( "GAUXC.BASIS_TOL",      basis_tol,  double ); // 截断
 
-    OPTIONAL_KEYWORD( "GAUXC.INTEGRATE_DEN",      integrate_den,      bool );
-    OPTIONAL_KEYWORD( "GAUXC.INTEGRATE_VXC",      integrate_vxc,      bool );
+    OPTIONAL_KEYWORD( "GAUXC.INTEGRATE_DEN",      integrate_den,      bool ); // 是否计算电子密度
+    OPTIONAL_KEYWORD( "GAUXC.INTEGRATE_VXC",      integrate_vxc,      bool ); // 是否计算交换相关能
     OPTIONAL_KEYWORD( "GAUXC.INTEGRATE_EXX",      integrate_exx,      bool );
+     // 是否计算交换相关能
     OPTIONAL_KEYWORD( "GAUXC.INTEGRATE_EXC_GRAD", integrate_exc_grad, bool );
+     // 是否计算交换相关能的梯度
 
-    IntegratorSettingsSNLinK sn_link_settings;
-    OPTIONAL_KEYWORD( "EXX.TOL_E", sn_link_settings.energy_tol, double );
-    OPTIONAL_KEYWORD( "EXX.TOL_K", sn_link_settings.k_tol,      double );
-
+    IntegratorSettingsSNLinK sn_link_settings; // 交换相关能的设置 
+    OPTIONAL_KEYWORD( "EXX.TOL_E", sn_link_settings.energy_tol, double ); // 交换相关能的能量容差
+    OPTIONAL_KEYWORD( "EXX.TOL_K", sn_link_settings.k_tol,      double ); // 交换相关能的波矢容差
 
     #ifdef GAUXC_ENABLE_DEVICE
     std::map< std::string, ExecutionSpace > exec_space_map = {
@@ -119,6 +130,7 @@ int main(int argc, char** argv) {
     auto int_exec_space = ExecutionSpace::Host;
     #endif
 
+    // 打印相关设置
     if( !world_rank ) {
       std::cout << std::boolalpha;
       std::cout << "DRIVER SETTINGS: " << std::endl
@@ -147,15 +159,13 @@ int main(int argc, char** argv) {
     }
 
 
+    // 从文件中读入分子信息
+    // Molecule mol;
+    // read_hdf5_record( mol, ref_file, "/MOLECULE" );
+    Molecule mol           = make_benzene();
+    BasisSet<double> basis = make_ccpvdz( mol, SphericalType(true) );
 
-
-
-
-    // Read Molecule
-    Molecule mol;
-    read_hdf5_record( mol, ref_file, "/MOLECULE" );
-
-    // Construct MolGrid / MolMeta
+    // Construct MolGrid / MolMeta  
     std::map< std::string, AtomicGridSizeDefault > mg_map = {
       {"FINE",      AtomicGridSizeDefault::FineGrid},
       {"ULTRAFINE", AtomicGridSizeDefault::UltraFineGrid},
@@ -175,8 +185,8 @@ int main(int argc, char** argv) {
      RadialQuad::MuraKnowles, mg_map.at(grid_spec));
 
     // Read BasisSet
-    BasisSet<double> basis; 
-    read_hdf5_record( basis, ref_file, "/BASIS" );
+    // BasisSet<double> basis; 
+    // read_hdf5_record( basis, ref_file, "/BASIS" );
 
     for( auto& sh : basis ){ 
       sh.set_shell_tolerance( basis_tol );
@@ -272,7 +282,6 @@ int main(int argc, char** argv) {
       }
 
     }
-    
 #ifdef GAUXC_ENABLE_MPI
     MPI_Barrier( MPI_COMM_WORLD );
 #endif
@@ -441,7 +450,7 @@ int main(int argc, char** argv) {
       std::cout << "RMS K Diff     = " << (K_ref - K).norm() / basis.nbf()
                                          << std::endl;
       }
-    }
+    } 
 
     // Dump out new file
     if( input.containsData("GAUXC.OUTFILE") ) {
@@ -484,6 +493,7 @@ int main(int argc, char** argv) {
     }
 
   }
+
 #ifdef GAUXC_ENABLE_MPI
   MPI_Finalize();
 #endif

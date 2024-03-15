@@ -28,7 +28,7 @@ endif()
 
 # GauXC Options
 option( GAUXC_ENABLE_HOST       "Enable Host Integrator"      ON  )
-option( GAUXC_ENABLE_CUDA       "Enable CUDA Bindings"        OFF )
+option( GAUXC_ENABLE_CUDA       "Enable CUDA Bindings"        ON )
 option( GAUXC_ENABLE_HIP        "Enable HIP Bindings"         OFF )
 option( GAUXC_ENABLE_MPI        "Enable MPI Bindings"         ON  )
 option( GAUXC_ENABLE_OPENMP     "Enable OpenMP Compilation"   ON  )
@@ -36,20 +36,20 @@ option( GAUXC_ENABLE_TESTS      "Enable Unit Tests"           ON  )
 option( GAUXC_ENABLE_GAU2GRID   "Enable Gau2Grid Collocation" ON  )
 option( GAUXC_ENABLE_HDF5       "Enable HDF5 Bindings"        ON  )
 option( GAUXC_ENABLE_FAST_RSQRT "Enable Fast RSQRT"           OFF )
-option( GAUXC_BLAS_PREFER_ILP64 "Enable ILP64 for host BLAS"  OFF )
+option( GAUXC_BLAS_PREFER_ILP64 "Enable ILP64 for host BLAS"  ON )
 
 include(CMakeDependentOption)
 cmake_dependent_option( GAUXC_ENABLE_MAGMA    
-  "Enable MAGMA Linear Algebra"           ON
+  "Enable MAGMA Linear Algebra"           OFF
   "GAUXC_ENABLE_CUDA OR GAUXC_ENABLE_HIP" OFF  
 )
 cmake_dependent_option( GAUXC_ENABLE_NCCL 
-  "Enable NCCL Collectives" OFF  
-  "GAUXC_ENABLE_CUDA"       OFF 
+  "Enable NCCL Collectives" ON  
+  "GAUXC_ENABLE_CUDA"       ON
 )
 cmake_dependent_option( GAUXC_ENABLE_CUTLASS  
-  "Enable CUTLASS Linear Algebra" OFF  
-  "GAUXC_ENABLE_CUDA"             OFF 
+  "Enable CUTLASS Linear Algebra" ON
+  "GAUXC_ENABLE_CUDA"             ON 
 )
 
 
